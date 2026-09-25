@@ -54,7 +54,9 @@ class TrackedDialog(tk.Toplevel):
         self.alias_var = tk.StringVar()
         self.cltr_var = tk.StringVar()
         self.note_var = tk.StringVar()
-        self.form_status = tk.StringVar(value="표 공고번호는 필수입니다. 온비드 번호가 다르면 따로 입력합니다.")
+        self.form_status = tk.StringVar(
+            value="공고번호만 저장해도 다시 조회할 때 물건관리번호를 모두 찾아 각각 조회합니다."
+        )
         self._selected_original = ""
         self._build()
         self._reload()
@@ -72,7 +74,7 @@ class TrackedDialog(tk.Toplevel):
         labels = (
             ("표 공고번호", self.original_var, "예: 202503-06201-00"),
             ("온비드 공고번호", self.alias_var, "다르면 입력, 같으면 비움"),
-            ("물건관리번호", self.cltr_var, "예: 2025-0300-013755"),
+            ("물건관리번호", self.cltr_var, "비우면 공고번호로 전부 조회"),
             ("비고", self.note_var, "비워 두면 번호로 자동 작성"),
         )
         for row, (label, var, hint) in enumerate(labels):
@@ -120,7 +122,7 @@ class TrackedDialog(tk.Toplevel):
                 values=(
                     entry["originalPbanc"],
                     entry.get("alias") or "",
-                    entry.get("cltrMngNo") or "",
+                    ", ".join(entry.get("cltrMngNos") or []) or entry.get("cltrMngNo") or "",
                     entry.get("note") or "",
                 ),
             )

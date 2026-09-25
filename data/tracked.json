@@ -4,78 +4,99 @@
       "originalPbanc": "202412-49115-01",
       "alias": null,
       "cltrMngNo": null,
+      "cltrMngNos": [],
       "note": null
     },
     {
       "originalPbanc": "202502-05480-00",
       "alias": "202502-05482-00",
       "cltrMngNo": "2025-0200-008474",
+      "cltrMngNos": [
+        "2025-0200-008474"
+      ],
       "note": "온비드 공고번호가 202502-05482-00으로 확인됨"
     },
     {
       "originalPbanc": "202503-06201-00",
       "alias": "202503-09207-00",
       "cltrMngNo": "2025-0300-013755",
+      "cltrMngNos": [
+        "2025-0300-013755"
+      ],
       "note": "온비드 공고번호가 202503-09207-00, 물건관리번호 2025-0300-013755로 확인됨"
     },
     {
       "originalPbanc": "202503-04909-00",
       "alias": null,
       "cltrMngNo": null,
+      "cltrMngNos": [],
       "note": null
     },
     {
       "originalPbanc": "202503-10391-00",
       "alias": null,
       "cltrMngNo": null,
+      "cltrMngNos": [],
       "note": null
     },
     {
       "originalPbanc": "202504-19911-00",
       "alias": "202504-15911-00",
       "cltrMngNo": "2025-0400-025470",
+      "cltrMngNos": [
+        "2025-0400-025470"
+      ],
       "note": "온비드 공고번호가 202504-15911-00으로 확인됨"
     },
     {
       "originalPbanc": "202505-17622-01",
       "alias": null,
       "cltrMngNo": null,
+      "cltrMngNos": [],
       "note": null
     },
     {
       "originalPbanc": "202506-23542-00",
       "alias": null,
       "cltrMngNo": null,
+      "cltrMngNos": [],
       "note": null
     },
     {
       "originalPbanc": "202607-25061-00",
       "alias": null,
       "cltrMngNo": null,
+      "cltrMngNos": [],
       "note": null
     },
     {
       "originalPbanc": "202601-55586-00",
       "alias": null,
       "cltrMngNo": null,
+      "cltrMngNos": [],
       "note": null
     },
     {
       "originalPbanc": "202605-19077-00",
       "alias": "202405-19077-00",
       "cltrMngNo": "2023-0600-030773",
+      "cltrMngNos": [
+        "2023-0600-030773"
+      ],
       "note": "온비드 공고번호가 202405-19077-00으로 확인됨"
     },
     {
       "originalPbanc": "202509-32873-00",
       "alias": null,
       "cltrMngNo": null,
+      "cltrMngNos": [],
       "note": null
     },
     {
       "originalPbanc": "202503-09775-00",
       "alias": null,
       "cltrMngNo": null,
+      "cltrMngNos": [],
       "note": null
     }
   ]

@@ -77,14 +77,40 @@ def normalize_tracked(raw: dict[str, Any]) -> dict[str, Any]:
         alias = None
     if cltr and not CLTR_RE.fullmatch(cltr):
         raise TrackedError("물건관리번호 형식이 아닙니다. 예: 2025-0300-013755")
-    if note is None and (alias or cltr):
+    numbers = _clean_item_numbers(raw.get("cltrMngNos"), cltr)
+    if note is None and (alias or cltr or numbers):
         parts = []
         if alias:
             parts.append(f"온비드 공고번호가 {alias}으로 확인됨")
-        if cltr:
+        if numbers:
+            parts.append("물건관리번호 " + ", ".join(numbers))
+        elif cltr:
             parts.append(f"물건관리번호 {cltr}")
         note = ", ".join(parts)
-    return {"originalPbanc": original, "alias": alias, "cltrMngNo": cltr, "note": note}
+    return {
+        "originalPbanc": original,
+        "alias": alias,
+        "cltrMngNo": cltr,
+        "cltrMngNos": numbers,
+        "note": note,
+    }
+
+
+def _clean_item_numbers(raw_numbers: Any, manual: str | None) -> list[str]:
+    numbers: list[str] = []
+    if isinstance(raw_numbers, str):
+        raw_numbers = [part.strip() for part in raw_numbers.split(",")]
+    if isinstance(raw_numbers, list):
+        for value in raw_numbers:
+            number = str(value or "").strip()
+            if not number or number in numbers:
+                continue
+            if not CLTR_RE.fullmatch(number):
+                raise TrackedError("물건관리번호 형식이 아닙니다. 예: 2025-0300-013755")
+            numbers.append(number)
+    if manual and manual not in numbers:
+        numbers.insert(0, manual)
+    return numbers
 
 
 def load_tracked() -> list[dict[str, Any]]:
@@ -136,6 +162,12 @@ def upsert_tracked(
     )
     if duplicate:
         raise TrackedError(f"이미 등록된 표 공고번호입니다: {entry['originalPbanc']}")
+    if index is not None and "cltrMngNos" not in raw:
+        previous = items[index].get("cltrMngNos") or []
+        merged = list(previous)
+        if entry.get("cltrMngNo") and entry["cltrMngNo"] not in merged:
+            merged.insert(0, entry["cltrMngNo"])
+        entry["cltrMngNos"] = merged
     if index is None:
         items.append(entry)
     else:
@@ -154,14 +186,44 @@ def delete_tracked(original: str) -> list[dict[str, Any]]:
     return kept
 
 
-def alias_items_for(tracked: list[dict[str, Any]] | None = None) -> dict[str, str]:
+def alias_items_for(tracked: list[dict[str, Any]] | None = None) -> dict[str, list[str]]:
     items = load_tracked() if tracked is None else tracked
-    mapping: dict[str, str] = {}
+    mapping: dict[str, list[str]] = {}
     for item in items:
-        cltr = item.get("cltrMngNo")
-        if cltr:
-            mapping[item.get("alias") or item["originalPbanc"]] = cltr
+        numbers = list(item.get("cltrMngNos") or [])
+        manual = item.get("cltrMngNo")
+        if manual and manual not in numbers:
+            numbers.insert(0, manual)
+        if numbers:
+            mapping[item.get("alias") or item["originalPbanc"]] = numbers
     return mapping
+
+
+def remember_item_numbers(original: str, items: list[dict[str, Any]]) -> None:
+    numbers: list[str] = []
+    for item in items:
+        number = str(item.get("cltrMngNo") or "").strip()
+        if number and number not in numbers:
+            numbers.append(number)
+    if not numbers:
+        return
+    tracked = load_tracked()
+    changed = False
+    for entry in tracked:
+        if entry["originalPbanc"] != original:
+            continue
+        manual = entry.get("cltrMngNo")
+        merged = list(numbers)
+        if manual and manual not in merged:
+            merged.insert(0, manual)
+        if entry.get("cltrMngNos") != merged:
+            entry["cltrMngNos"] = merged
+            changed = True
+        if not manual:
+            entry["cltrMngNo"] = merged[0]
+            changed = True
+    if changed:
+        save_tracked(tracked)
 
 
 def snapshot_path() -> Path:
@@ -384,6 +446,42 @@ def _to_item(raw: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _saved_item_numbers(alias_items: dict[str, Any] | None, query: str) -> list[str]:
+    if not alias_items:
+        return []
+    value = alias_items.get(query)
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return [str(number) for number in value if number]
+
+
+def _with_item_lookup(
+    client: OnbidClient,
+    headers: dict[str, str],
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    enriched: list[dict[str, Any]] = []
+    for row in rows:
+        number = str(row.get("cltrMngNo") or row.get("scrnIndctCltrMngNo") or "").strip()
+        if not number:
+            enriched.append(row)
+            continue
+        try:
+            detail = client.lookup_item(headers, number)
+        except Exception:
+            enriched.append(row)
+            continue
+        if not (detail.get("onbidCltrno") or detail.get("scrnIndctCltrMngNo") or detail.get("cltrMngNo")):
+            enriched.append(row)
+            continue
+        merged = {**row, **{key: value for key, value in detail.items() if value not in (None, "")}}
+        merged["cltrMngNo"] = detail.get("cltrMngNo") or detail.get("scrnIndctCltrMngNo") or number
+        enriched.append(merged)
+    return enriched
+
+
 def _unique_latest(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by: dict[str, dict[str, Any]] = {}
     for row in rows:
@@ -427,8 +525,8 @@ def fetch_announcement(
     latest = sorted(rounds, key=lambda r: _nsq(r.get("pbctNsq")), reverse=True)[0] if rounds else None
 
     if not latest:
-        alias_item = (alias_items if alias_items is not None else alias_items_for()).get(query)
-        if alias_item:
+        saved_numbers = _saved_item_numbers(alias_items if alias_items is not None else alias_items_for(), query)
+        for alias_item in saved_numbers:
             item = client.lookup_item(headers, alias_item)
             if item.get("onbidPbancNo"):
                 latest = {
@@ -444,6 +542,7 @@ def fetch_announcement(
                     "pbctExctDt": item.get("pbctExctDt"),
                 }
                 rounds = [latest]
+                break
 
     if not latest:
         return rec
@@ -479,7 +578,7 @@ def fetch_announcement(
         }
     )
     raw_items = client.fetch_items(headers, latest.get("onbidPbancNo"), latest.get("pbctNo"))
-    uniq = _unique_latest(raw_items)
+    uniq = _with_item_lookup(client, headers, _unique_latest(raw_items))
     rec["itemCount"] = len(uniq)
     rec["items"] = [
         _to_item(
@@ -519,16 +618,17 @@ def refresh_tracked() -> dict[str, Any]:
     for item in tracked:
         query = item.get("alias") or item["originalPbanc"]
         try:
-            announcements.append(
-                fetch_announcement(
-                    client,
-                    headers,
-                    item["originalPbanc"],
-                    query,
-                    item.get("note"),
-                    alias_items,
-                )
+            announcement = fetch_announcement(
+                client,
+                headers,
+                item["originalPbanc"],
+                query,
+                item.get("note"),
+                alias_items,
             )
+            if announcement.get("found"):
+                remember_item_numbers(item["originalPbanc"], announcement.get("items") or [])
+            announcements.append(announcement)
         except Exception:
             announcements.append(empty_announcement(item["originalPbanc"], query, item.get("note")))
     data = {

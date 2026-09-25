@@ -58,7 +58,7 @@ def test_upsert_updates_existing_alias_and_item(tracked_file):
     assert len(items) == 1
     assert items[0]["alias"] == "202503-09999-00"
     assert items[0]["cltrMngNo"] == "2025-0300-999999"
-    assert alias_items_for(items) == {"202503-09999-00": "2025-0300-999999"}
+    assert alias_items_for(items) == {"202503-09999-00": ["2025-0300-999999", "2025-0300-013755"]}
 
 
 def test_upsert_can_rename_original_number(tracked_file):
@@ -80,6 +80,48 @@ def test_delete_tracked(tracked_file):
     assert delete_tracked("202503-06201-00") == []
     with pytest.raises(TrackedError):
         delete_tracked("202503-06201-00")
+
+
+def test_announcement_looks_up_every_item(monkeypatch):
+    class FakeClient:
+        def fetch_items(self, headers, onbid_pbanc_no, pbct_no):
+            return [
+                {"cltrMngNo": "2025-0300-013755", "onbidCltrNm": "갑", "pbctCltrStatNm": "유찰", "pbctNsq": 1},
+                {"cltrMngNo": "2025-0300-013756", "onbidCltrNm": "을", "pbctCltrStatNm": "유찰", "pbctNsq": 1},
+            ]
+
+        def lookup_item(self, headers, cltr):
+            return {
+                "onbidCltrno": cltr[-1],
+                "scrnIndctCltrMngNo": cltr,
+                "onbidCltrNm": cltr,
+                "pbctCltrStatNm": "수의계약가능",
+                "pbancMngNo": "202503-09207-00",
+            }
+
+        def search_unf(self, headers, query):
+            return {
+                "pbancRsltSrchRslt": [
+                    {
+                        "pbancMngNo": query,
+                        "onbidPbancNo": 1,
+                        "pbctNo": 2,
+                        "pbctNsq": 1,
+                        "onbidPbancNm": "테스트",
+                        "regOrgNm": "기관",
+                    }
+                ]
+            }
+
+        def fetch_schedule(self, headers, onbid_pbanc_no, pbct_no):
+            return []
+
+    announcement = onbid_client.fetch_announcement(FakeClient(), {}, "202503-09207-00", "202503-09207-00")
+    assert [item["cltrMngNo"] for item in announcement["items"]] == [
+        "2025-0300-013755",
+        "2025-0300-013756",
+    ]
+    assert {item["status"] for item in announcement["items"]} == {"수의계약가능"}
 
 
 def test_refresh_uses_saved_numbers(tracked_file, monkeypatch):
