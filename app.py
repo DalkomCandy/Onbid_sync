@@ -17,8 +17,10 @@ from onbid_client import (
     CLTR_RE,
     PBANC_RE,
     TrackedError,
+    add_tracked_many,
     delete_tracked,
     flatten_rows,
+    parse_pasted_tracked,
     format_won,
     load_snapshot,
     load_tracked,
@@ -47,8 +49,8 @@ class TrackedDialog(tk.Toplevel):
         super().__init__(master)
         self.master_app = master
         self.title("공고번호 · 물건관리번호")
-        self.geometry("920x560")
-        self.minsize(760, 420)
+        self.geometry("920x700")
+        self.minsize(760, 560)
         self.transient(master)
         self.original_var = tk.StringVar()
         self.alias_var = tk.StringVar()
@@ -82,6 +84,16 @@ class TrackedDialog(tk.Toplevel):
             ttk.Entry(form, textvariable=var).grid(row=row, column=1, sticky="ew", pady=3)
             ttk.Label(form, text=hint).grid(row=row, column=2, sticky="w", padx=(8, 0), pady=3)
         form.columnconfigure(1, weight=1)
+
+        paste_box = ttk.LabelFrame(self, text="공고번호 여러 개 붙여 넣기", padding=12)
+        paste_box.pack(fill="both", expand=False, padx=16, pady=(0, 8))
+        ttk.Label(
+            paste_box,
+            text="엑셀에서 공고번호 열을 복사한 뒤 아래에 붙여 넣으세요. 한 줄에 하나씩 등록됩니다.",
+        ).pack(anchor="w")
+        self.paste_text = tk.Text(paste_box, height=6, wrap="none")
+        self.paste_text.pack(fill="both", expand=True, pady=(8, 8))
+        ttk.Button(paste_box, text="붙여 넣은 번호 등록", command=self.add_pasted).pack(anchor="w")
 
         buttons = ttk.Frame(self, padding=(16, 0))
         buttons.pack(fill="x")
@@ -153,6 +165,34 @@ class TrackedDialog(tk.Toplevel):
             "cltrMngNo": self.cltr_var.get(),
             "note": self.note_var.get(),
         }
+
+    def add_pasted(self) -> None:
+        text = self.paste_text.get("1.0", "end")
+        entries, errors = parse_pasted_tracked(text)
+        if not entries and not errors:
+            messagebox.showwarning("붙여 넣기", "등록할 공고번호를 붙여 넣어 주세요.", parent=self)
+            return
+        if not entries:
+            messagebox.showerror("붙여 넣기", "\n".join(errors[:12]), parent=self)
+            return
+        result = add_tracked_many(entries)
+        added = result["added"]
+        skipped = result["skipped"]
+        self.paste_text.delete("1.0", "end")
+        if added:
+            self._reload(added[-1])
+        parts = [f"{len(added)}건을 등록했습니다."]
+        if skipped:
+            parts.append(f"이미 있는 번호 {len(skipped)}건은 건너뛰었습니다.")
+        if errors:
+            parts.append(f"형식 오류 {len(errors)}행은 등록하지 않았습니다.")
+        summary = " ".join(parts)
+        self.form_status.set(summary + " 다시 조회하면 반영됩니다.")
+        self.master_app.status_var.set(self.form_status.get())
+        detail = summary
+        if errors:
+            detail += "\n\n" + "\n".join(errors[:12])
+        messagebox.showinfo("일괄 등록", detail, parent=self)
 
     def add_entry(self) -> None:
         try:

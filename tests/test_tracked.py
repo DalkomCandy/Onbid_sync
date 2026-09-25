@@ -3,7 +3,15 @@ import json
 import pytest
 
 import onbid_client
-from onbid_client import TrackedError, alias_items_for, delete_tracked, load_tracked, upsert_tracked
+from onbid_client import (
+    TrackedError,
+    add_tracked_many,
+    alias_items_for,
+    delete_tracked,
+    load_tracked,
+    parse_pasted_tracked,
+    upsert_tracked,
+)
 
 
 @pytest.fixture
@@ -122,6 +130,33 @@ def test_announcement_looks_up_every_item(monkeypatch):
         "2025-0300-013756",
     ]
     assert {item["status"] for item in announcement["items"]} == {"수의계약가능"}
+
+
+def test_parse_excel_column_paste():
+    pasted = "202609-10001-00\r\n202609-10002-00\r\n\r\n잘못된번호\r\n202609-10001-00\r\n"
+    entries, errors = parse_pasted_tracked(pasted)
+    assert [entry["originalPbanc"] for entry in entries] == ["202609-10001-00", "202609-10002-00"]
+    assert len(errors) == 2
+
+
+def test_parse_excel_row_with_alias_and_item():
+    pasted = "202609-20001-00\t202609-20002-00\t2026-0900-000333\n"
+    entries, errors = parse_pasted_tracked(pasted)
+    assert errors == []
+    assert entries[0]["originalPbanc"] == "202609-20001-00"
+    assert entries[0]["alias"] == "202609-20002-00"
+    assert entries[0]["cltrMngNo"] == "2026-0900-000333"
+
+
+def test_add_tracked_many_skips_existing(tracked_file):
+    pasted = "202503-06201-00\n202609-30001-00\n202609-30002-00\n"
+    entries, errors = parse_pasted_tracked(pasted)
+    assert errors == []
+    result = add_tracked_many(entries)
+    assert result["added"] == ["202609-30001-00", "202609-30002-00"]
+    assert result["skipped"] == ["202503-06201-00"]
+    saved = {item["originalPbanc"] for item in load_tracked()}
+    assert {"202609-30001-00", "202609-30002-00"} <= saved
 
 
 def test_refresh_uses_saved_numbers(tracked_file, monkeypatch):

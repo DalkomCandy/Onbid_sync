@@ -176,6 +176,59 @@ def upsert_tracked(
     return items
 
 
+def parse_pasted_tracked(text: str) -> tuple[list[dict[str, Any]], list[str]]:
+    entries: list[dict[str, Any]] = []
+    errors: list[str] = []
+    seen: set[str] = set()
+    for lineno, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.strip().strip('"').strip("'")
+        if not line:
+            continue
+        cells = [cell.strip().strip('"').strip("'") for cell in line.split("\t")]
+        cells = [cell for cell in cells if cell]
+        if len(cells) == 1:
+            pieces = [piece for piece in re.split(r"[, ]+", cells[0]) if piece]
+            if len(pieces) > 1:
+                cells = pieces
+        announcements = [cell for cell in cells if PBANC_RE.fullmatch(cell)]
+        item_numbers = [cell for cell in cells if CLTR_RE.fullmatch(cell)]
+        if not announcements:
+            errors.append(f"{lineno}행: 공고번호 형식이 아닙니다 ({line})")
+            continue
+        original = announcements[0]
+        if original in seen:
+            errors.append(f"{lineno}행: 붙여넣은 목록 안에서 중복입니다 ({original})")
+            continue
+        seen.add(original)
+        entries.append(
+            {
+                "originalPbanc": original,
+                "alias": announcements[1] if len(announcements) > 1 else None,
+                "cltrMngNo": item_numbers[0] if item_numbers else None,
+                "cltrMngNos": item_numbers,
+            }
+        )
+    return entries, errors
+
+
+def add_tracked_many(entries: list[dict[str, Any]]) -> dict[str, list[str]]:
+    items = load_tracked()
+    existing = {item["originalPbanc"] for item in items}
+    added: list[str] = []
+    skipped: list[str] = []
+    for raw in entries:
+        entry = normalize_tracked(raw)
+        if entry["originalPbanc"] in existing:
+            skipped.append(entry["originalPbanc"])
+            continue
+        items.append(entry)
+        existing.add(entry["originalPbanc"])
+        added.append(entry["originalPbanc"])
+    if added:
+        save_tracked(items)
+    return {"added": added, "skipped": skipped}
+
+
 def delete_tracked(original: str) -> list[dict[str, Any]]:
     key = original.strip()
     items = load_tracked()
